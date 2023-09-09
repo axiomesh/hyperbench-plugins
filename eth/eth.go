@@ -54,8 +54,6 @@ type ETH struct {
 	auth        *bind.TransactOpts
 	startBlock  uint64
 	endBlock    uint64
-	contracts   map[string]Contract
-	Accounts    map[string]*ecdsa.PrivateKey
 	chainID     *big.Int
 	gasPrice    *big.Int
 	round       uint64
@@ -80,6 +78,7 @@ var (
 	accountAddrList []string
 	PrivateK        *ecdsa.PrivateKey
 	fromAddress     common.Address
+	contracts       map[string]Contract
 )
 
 func init() {
@@ -185,7 +184,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		chainID:        chainID,
 		gasPrice:       gasPrice,
 		startBlock:     startBlock.Number.Uint64(),
-		Accounts:       accounts,
 		round:          0,
 		nonce:          nonce,
 		engineCap:      viper.GetUint64(fcom.EngineCapPath),
@@ -207,7 +205,7 @@ func (e *ETH) DeployContract() error {
 
 	if e.BlockchainBase.ContractPath != "" {
 		var er error
-		e.contracts, er = newContract(e.BlockchainBase.ContractPath)
+		contracts, er = newContract(e.BlockchainBase.ContractPath)
 		if er != nil {
 			e.Logger.Errorf("initiate contract failed: %v", er)
 			return er
@@ -216,7 +214,7 @@ func (e *ETH) DeployContract() error {
 		return nil
 	}
 
-	for name, contract := range e.contracts {
+	for name, contract := range contracts {
 		parsed, err := abi.JSON(strings.NewReader(contract.ABI))
 		if err != nil {
 			e.Logger.Errorf("decode abi of contract failed: %v", err)
@@ -226,18 +224,22 @@ func (e *ETH) DeployContract() error {
 
 		// deploy contract num is contractNum for every contract
 		for i := 0; i < int(e.contractNum); i++ {
+			e.auth.GasPrice = nil
+			e.auth.GasLimit = 0
+
 			contractAddress, _, _, err := bind.DeployContract(e.auth, parsed, common.FromHex(contract.BIN), e.ethClient, e.Args...)
 			if err != nil {
 				e.Logger.Errorf("deploycontract failed: %v", err)
 				continue
 			}
+
 			contract.contractAddress = append(contract.contractAddress, contractAddress)
 
 			e.nonce++
 			e.auth.Nonce = big.NewInt(int64(e.nonce))
 		}
 		// update contract
-		e.contracts[name] = contract
+		contracts[name] = contract
 		e.Logger.Infof("deploy contract: %s success, count: %d", name, len(contract.contractAddress))
 	}
 
@@ -249,7 +251,7 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	lock.RLock()
 	defer lock.RUnlock()
 
-	contract, ok := e.contracts[invoke.Contract]
+	contract, ok := contracts[invoke.Contract]
 	if !ok {
 		e.Logger.Errorf("invoke error, no this contract: %s", invoke.Contract)
 		return e.handleErr()
@@ -276,7 +278,7 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 		return e.handleErr()
 	}
 
-	priKey := e.Accounts[invoke.Caller]
+	priKey := accounts[invoke.Caller]
 	auth, err := bind.NewKeyedTransactorWithChainID(priKey, e.chainID)
 	if err != nil {
 		e.Logger.Errorf("generate transaction options failed: %v", err)
@@ -361,7 +363,7 @@ func (e *ETH) Transfer(args fcom.Transfer, ops ...fcom.Option) (result *fcom.Res
 	tx := types.NewTransaction(nonce, toAddress, value, gasLimit, e.gasPrice, data)
 	buildTime := time.Now().UnixNano()
 
-	account, ok := e.Accounts[args.From]
+	account, ok := accounts[args.From]
 	if !ok {
 		e.Logger.Errorf("get account error: from: %s", args.From)
 		return e.handleErr()
