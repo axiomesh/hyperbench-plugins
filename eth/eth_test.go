@@ -1,8 +1,9 @@
 package main
 
 import (
-	"io/ioutil"
+	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/meshplus/hyperbench-common/base"
@@ -29,8 +30,8 @@ func TestClient(t *testing.T) {
 	defer os.RemoveAll("./benchmark")
 
 	os.MkdirAll("./benchmark/ethInvoke/eth", 0755)
-	ioutil.WriteFile("./benchmark/ethInvoke/config.toml", []byte(config), 0644)
-	ioutil.WriteFile("./benchmark/ethInvoke/eth/eth.toml", []byte(ethConfig), 0644)
+	os.WriteFile("./benchmark/ethInvoke/config.toml", []byte(config), 0644)
+	os.WriteFile("./benchmark/ethInvoke/eth/eth.toml", []byte(ethConfig), 0644)
 
 	viper.AddConfigPath("benchmark/ethInvoke")
 	viper.ReadInConfig()
@@ -67,7 +68,7 @@ func TestClient(t *testing.T) {
 	{"address":"74d366e0649a91395bb122c005917644382b9452","crypto":{"cipher":"aes-128-ct","ciphertext":"fc4e8e2c753a98762828fad76697322da6a0143d6bfe223ce8a590637b433b75","cipherparams":{"iv":"9eab2eb01311d078ac7e3325150eecb2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"0a8bda7b2e61a563a277601e65f6f30a92ab58e6e18f806105bb7218dff4c883"},"mac":"18f543410e2869a6a843166f1c3fb6aae5a5ec0dc6fdd41d1d76d8e8b19c5983"},"id":"98123f84-3855-4f12-b844-8c0d8ac02c09","version":3}
 	`
 	os.MkdirAll("./benchmark/ethInvoke/eth/keystore", 0755)
-	ioutil.WriteFile("./benchmark/ethInvoke/eth/keystore/key1", []byte(key1), 0644)
+	os.WriteFile("./benchmark/ethInvoke/eth/keystore/key1", []byte(key1), 0644)
 	client, err = New(b)
 	assert.Nil(t, client)
 	assert.Error(t, err)
@@ -75,7 +76,7 @@ func TestClient(t *testing.T) {
 	key1 = `
 	{"address":"74d366e0649a91395bb122c005917644382b9452","crypto":{"cipher":"aes-128-ctr","ciphertext":"fc4e8e2c753a98762828fad76697322da6a0143d6bfe223ce8a590637b433b75","cipherparams":{"iv":"9eab2eb01311d078ac7e3325150eecb2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"0a8bda7b2e61a563a277601e65f6f30a92ab58e6e18f806105bb7218dff4c883"},"mac":"18f543410e2869a6a843166f1c3fb6aae5a5ec0dc6fdd41d1d76d8e8b19c5983"},"id":"98123f84-3855-4f12-b844-8c0d8ac02c09","version":3}
 	`
-	ioutil.WriteFile("./benchmark/ethInvoke/eth/keystore/key1", []byte(key1), 0644)
+	os.WriteFile("./benchmark/ethInvoke/eth/keystore/key1", []byte(key1), 0644)
 	client, err = New(b)
 	assert.Nil(t, client)
 	assert.Error(t, err)
@@ -142,8 +143,8 @@ func TestDeployContract(t *testing.T) {
 	abi := `
 	[{"stateMutability":"nonpayable","type":"constructor"},{"anonymous":false,"inputs":[{"indexed":false,"internalType":"string","name":"key","type":"string"},{"indexed":false,"internalType":"string","name":"value","type":"string"}],"name":"ItemSet","type":"event"},{"inputs":[{"internalType":"string","name":"","type":"string"}],"name":"items","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},{"inputs":[{"internalType":"string","name":"key","type":"string"},{"internalType":"string","name":"value","type":"string"}],"name":"test","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[],"name":"version","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}]
 	`
-	ioutil.WriteFile("./benchmark/ethInvoke/contract/a.abi", []byte(abi), 0644)
-	ioutil.WriteFile("./benchmark/ethInvoke/contract/b.bin", []byte("abi"), 0644)
+	os.WriteFile("./benchmark/ethInvoke/contract/a.abi", []byte(abi), 0644)
+	os.WriteFile("./benchmark/ethInvoke/contract/b.bin", []byte("abi"), 0644)
 	err = c.(*ETH).DeployContract()
 	assert.Error(t, err)
 
@@ -180,7 +181,6 @@ func TestTransaction(t *testing.T) {
 	err = client.SetContext(msg)
 	assert.NoError(t, err)
 
-	client.contract.ABI = "111"
 	msg, err = client.GetContext()
 	assert.NoError(t, err)
 	err = client.SetContext(msg)
@@ -217,14 +217,14 @@ func TestTransaction(t *testing.T) {
 		Options:    op,
 	})
 	os.MkdirAll("./benchmark/ethTransfer/eth/keystore/-3", 0755)
-	ioutil.WriteFile("./benchmark/ethTransfer/eth/keystore/-1", []byte(`{"address":"74d366e0649a91395bb122c005917644382b9452","crypto":{"cipher":"aes-128-ctr","ciphertext":"fc4e8e2c753a98762828fad76697322da6a0143d6bfe223ce8a590637b433b75","cipherparams":{"iv":"9eab2eb01311d078ac7e3325150eecb2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"0a8bda7b2e61a563a277601e65f6f30a92ab58e6e18f806105bb7218dff4c883"},"mac":"18f543410e2869a6a843166f1c3fb6aae5a5ec0dc6fdd41d1d76d8e8b19c5983"},"id":"98123f84-3855-4f12-b844-8c0d8ac02c09","version":3}`), 0644)
-	ioutil.WriteFile("./benchmark/ethTransfer/eth/keystore/-2", []byte(`{"address":"3b2b643246666bfa1332257c13d0d1283736838d","crypto":{"cipher":"aes-128-ctr","ciphertext":"50b10e30295ff3a5b729b3bc62e89145ebf6b5839cd3b8c13dcbbf099584cec6","cipherparams":{"iv":"fe3dd61296891e6654fd1b39ff2401a2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"1244ce8b522ff776be571c8814a7dfd6c8607aecd1f3b145385a27aa0d1443c7"},"mac":"78ff225aa55470d242b1464b9b42476313024bbfab343a5bbd27e748c67b44d8"},"id":"c066e226-9b72-4d63-a556-70034d0a135b","version":3}`), 0644)
-	ioutil.WriteFile("./benchmark/ethTransfer/eth/eth.toml", []byte(``), 0644)
+	os.WriteFile("./benchmark/ethTransfer/eth/keystore/-1", []byte(`{"address":"74d366e0649a91395bb122c005917644382b9452","crypto":{"cipher":"aes-128-ctr","ciphertext":"fc4e8e2c753a98762828fad76697322da6a0143d6bfe223ce8a590637b433b75","cipherparams":{"iv":"9eab2eb01311d078ac7e3325150eecb2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"0a8bda7b2e61a563a277601e65f6f30a92ab58e6e18f806105bb7218dff4c883"},"mac":"18f543410e2869a6a843166f1c3fb6aae5a5ec0dc6fdd41d1d76d8e8b19c5983"},"id":"98123f84-3855-4f12-b844-8c0d8ac02c09","version":3}`), 0644)
+	os.WriteFile("./benchmark/ethTransfer/eth/keystore/-2", []byte(`{"address":"3b2b643246666bfa1332257c13d0d1283736838d","crypto":{"cipher":"aes-128-ctr","ciphertext":"50b10e30295ff3a5b729b3bc62e89145ebf6b5839cd3b8c13dcbbf099584cec6","cipherparams":{"iv":"fe3dd61296891e6654fd1b39ff2401a2"},"kdf":"scrypt","kdfparams":{"dklen":32,"n":262144,"p":1,"r":8,"salt":"1244ce8b522ff776be571c8814a7dfd6c8607aecd1f3b145385a27aa0d1443c7"},"mac":"78ff225aa55470d242b1464b9b42476313024bbfab343a5bbd27e748c67b44d8"},"id":"c066e226-9b72-4d63-a556-70034d0a135b","version":3}`), 0644)
+	os.WriteFile("./benchmark/ethTransfer/eth/eth.toml", []byte(``), 0644)
 	c, _ = New(b)
 	assert.Nil(t, c)
 
 	os.Remove("./benchmark/ethTransfer/eth/keystore/-3")
-	ioutil.WriteFile("./benchmark/ethTransfer/eth/keystore/-4", []byte(""), 0644)
+	os.WriteFile("./benchmark/ethTransfer/eth/keystore/-4", []byte(""), 0644)
 	c, _ = New(b)
 	assert.Nil(t, c)
 
@@ -263,4 +263,46 @@ func TestTransaction(t *testing.T) {
 	err = client.Option(fcom.Option{})
 	assert.NoError(t, err)
 
+}
+
+func TestGetRandomAccountByGroup(t *testing.T) {
+	e := &ETH{}
+	e.workerNum = 10
+	e.engineCap = 6
+	e.wkIdx = 9
+	e.vmIdx = 5
+	e.accCount = 1000000
+
+	accountAddrList = make([]string, 2000000)
+	for i := 0; i < 2000000; i++ {
+		accountAddrList[i] = fmt.Sprintf("%d", i)
+	}
+
+	for i := 0; i < 100000; i++ {
+		acc := e.GetRandomAccountByGroup()
+		num, _ := strconv.Atoi(acc)
+		if num < 983294 {
+			t.Logf("%s", acc)
+		}
+	}
+}
+
+func TestGetRandomAccount(t *testing.T) {
+	e := &ETH{}
+	e.workerNum = 1
+	e.engineCap = 1
+	e.wkIdx = 0
+	e.vmIdx = 0
+	e.accCount = 1000
+
+	accountAddrList = make([]string, 1000)
+	for i := 0; i < 1000; i++ {
+		accountAddrList[i] = fmt.Sprintf("%d", i)
+	}
+
+	for i := 0; i < 100000; i++ {
+		acc1 := e.GetRandomAccountByGroup()
+		acc2 := e.GetRandomAccount(acc1)
+		assert.NotEqualValues(t, acc1, acc2)
+	}
 }
