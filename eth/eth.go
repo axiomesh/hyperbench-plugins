@@ -294,7 +294,10 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	}
 	auth.NoSend = e.op.noSend
 	buildTime := time.Now().UnixNano()
-	tx, err := instance.Transact(auth, invoke.Func, invoke.Args...)
+
+	args := e.convertArgs(invoke.Args)
+
+	tx, err := instance.Transact(auth, invoke.Func, args...)
 	sendTime := time.Now().UnixNano()
 	if err != nil {
 		e.Logger.Errorf("invoke error: %v", err)
@@ -318,6 +321,28 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 
 	return ret
 
+}
+
+func (e *ETH) convertArgs(args []interface{}) []interface{} {
+	var dstArgs []interface{}
+	for _, arg := range args {
+		switch reflect.TypeOf(arg) {
+		case reflect.TypeOf(float64(0)):
+			argFloat := arg.(float64)
+			dstArgs = append(dstArgs, big.NewInt(int64(argFloat)))
+		case reflect.TypeOf(""):
+			argStr := arg.(string)
+			if strings.HasPrefix(argStr, "0x") || len(argStr) == common.AddressLength*2 {
+				addr := common.HexToAddress(argStr)
+				dstArgs = append(dstArgs, addr)
+			} else {
+				dstArgs = append(dstArgs, arg)
+			}
+		default:
+			dstArgs = append(dstArgs, arg)
+		}
+	}
+	return dstArgs
 }
 
 // Confirm check the result of `Invoke` or `Transfer`
