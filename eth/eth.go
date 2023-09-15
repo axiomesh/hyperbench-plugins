@@ -551,7 +551,11 @@ func (e *ETH) Option(options fcom.Option) error {
 	return nil
 }
 
+// GetContractAddrByName get contract addr by name
 func (e *ETH) GetContractAddrByName(contractName string) string {
+	lock.RLock()
+	defer lock.RUnlock()
+
 	contract, exists := contracts[contractName]
 	if !exists {
 		return ""
