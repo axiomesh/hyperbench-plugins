@@ -2,7 +2,7 @@ module github.com/meshplus/hyperbench-plugins/eth
 
 go 1.20
 
-replace github.com/meshplus/hyperbench-common v0.0.0-20220128060413-2f16193421b0 => github.com/axiomesh/hyperbench-common v0.0.0-20230913063005-1181b75b02b2
+replace github.com/meshplus/hyperbench-common v0.0.0-20220128060413-2f16193421b0 => github.com/axiomesh/hyperbench-common v0.0.0-20230915025550-d1c846e3d81d
 
 require (
 	github.com/ethereum/go-ethereum v1.12.0
@@ -10,7 +10,6 @@ require (
 	github.com/spf13/cast v1.4.1
 	github.com/spf13/viper v1.10.1
 	github.com/stretchr/testify v1.8.2
-	google.golang.org/appengine v1.6.7
 )
 
 require (
@@ -23,7 +22,6 @@ require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
-	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -41,10 +39,8 @@ require (
 	github.com/tklauser/go-sysconf v0.3.5 // indirect
 	github.com/tklauser/numcpus v0.2.2 // indirect
 	golang.org/x/crypto v0.1.0 // indirect
-	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sys v0.7.0 // indirect
 	golang.org/x/text v0.8.0 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/ini.v1 v1.66.2 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

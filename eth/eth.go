@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/meshplus/hyperbench-common/base"
 	"os"
 	"path"
 	"reflect"
@@ -22,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/meshplus/hyperbench-common/base"
 	fcom "github.com/meshplus/hyperbench-common/common"
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
@@ -574,6 +574,23 @@ func (e *ETH) Option(options fcom.Option) error {
 		}
 	}
 	return nil
+}
+
+// GetContractAddrByName get contract addr by name
+func (e *ETH) GetContractAddrByName(contractName string) string {
+	lock.RLock()
+	defer lock.RUnlock()
+
+	contract, exists := contracts[contractName]
+	if !exists {
+		return ""
+	}
+
+	if len(contract.contractAddress) == 0 {
+		return ""
+	}
+
+	return contract.contractAddress[0].String()
 }
 
 func (e *ETH) handleErr() *fcom.Result {
