@@ -2,7 +2,7 @@ module github.com/meshplus/hyperbench-plugins/eth
 
 go 1.20
 
-replace github.com/meshplus/hyperbench-common v0.0.0-20220128060413-2f16193421b0 => github.com/axiomesh/hyperbench-common v0.0.0-20230915025550-d1c846e3d81d
+replace github.com/meshplus/hyperbench-common v0.0.0-20220128060413-2f16193421b0 => github.com/axiomesh/hyperbench-common v0.0.0-20230915111226-cafd3d991992
 
 require (
 	github.com/ethereum/go-ethereum v1.12.0

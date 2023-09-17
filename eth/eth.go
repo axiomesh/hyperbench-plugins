@@ -30,6 +30,7 @@ import (
 
 const gasLimit = 300000
 const sep = "\n"
+const valuefactor = 100000000000000000
 
 // Contract contains the abi and bin files of contract
 type Contract struct {
@@ -39,10 +40,34 @@ type Contract struct {
 	parsedAbi       abi.ABI
 	contractAddress []common.Address
 }
+
 type option struct {
 	gas    *big.Int
 	setGas bool
 	noSend bool
+}
+
+type NonceMgr struct {
+	nonceMap map[string]uint64
+	lock     sync.RWMutex
+}
+
+func (nm *NonceMgr) getNonce(client *ethclient.Client, addr common.Address) (uint64, error) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	if nonce, ok := nm.nonceMap[addr.String()]; ok {
+		nonce++
+		nm.nonceMap[addr.String()] = nonce
+		return nonce, nil
+	}
+
+	nonce, err := client.PendingNonceAt(context.Background(), addr)
+	if err != nil {
+		return 0, err
+	}
+	nm.nonceMap[addr.String()] = nonce
+	return nonce, nil
 }
 
 // ETH the client of eth
@@ -63,7 +88,6 @@ type ETH struct {
 	contractNum uint64
 	wkIdx       uint64
 	vmIdx       uint64
-	accCount    uint64
 	op          option
 }
 
@@ -79,18 +103,21 @@ var (
 	PrivateK        *ecdsa.PrivateKey
 	fromAddress     common.Address
 	contracts       map[string]Contract
+	nonceMgr        NonceMgr
+	accountCount    uint64
 )
 
 func init() {
+	nonceMgr.nonceMap = make(map[string]uint64)
+
 	log := fcom.GetLogger("eth")
 	configPath := viper.GetString(fcom.ClientConfigPath)
 	options := viper.GetStringMap(fcom.ClientOptionPath)
+	accountCount = viper.GetUint64(fcom.EngineAccountsPath)
 	files, err := os.ReadDir(configPath + "/keystore")
 	if err != nil {
 		log.Errorf("access keystore failed:%v", err)
 	}
-
-	lock.Lock()
 
 	accounts = make(map[string]*ecdsa.PrivateKey)
 	for i, file := range files {
@@ -109,14 +136,10 @@ func init() {
 		}
 	}
 
-	lock.Unlock()
 }
 
 // New use given blockchainBase create ETH.
 func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
-	lock.Lock()
-	defer lock.Unlock()
-
 	log := fcom.GetLogger("eth")
 	ethConfig, err := os.Open(blockchainBase.ConfigPath + "/eth.toml")
 	if err != nil {
@@ -130,7 +153,7 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		return nil, err
 	}
 
-	nonce, err := ethClient.PendingNonceAt(context.Background(), fromAddress)
+	nonce, err := nonceMgr.getNonce(ethClient, fromAddress)
 	if err != nil {
 		log.Errorf("pending nonce failed: %v", err)
 		return nil, err
@@ -170,11 +193,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 	}
 	vmIdx := uint64(blockchainBase.Options["vmIdx"].(int64))
 	wkIdx := uint64(blockchainBase.Options["wkIdx"].(int64))
-	accCount := uint64(blockchainBase.Options["accounts"].(int64))
-
-	if accCount > uint64(len(accountAddrList)) {
-		return nil, fmt.Errorf("actual account count %d is bigger than importing account count: %d", accCount, len(accountAddrList))
-	}
 
 	client = &ETH{
 		BlockchainBase: blockchainBase,
@@ -191,7 +209,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		contractNum:    contractNum,
 		vmIdx:          vmIdx,
 		wkIdx:          wkIdx,
-		accCount:       accCount,
 		op: option{
 			setGas: false,
 			noSend: false,
@@ -226,6 +243,12 @@ func (e *ETH) DeployContract() error {
 		for i := 0; i < int(e.contractNum); i++ {
 			e.auth.GasPrice = nil
 			e.auth.GasLimit = 0
+			nonce, err := nonceMgr.getNonce(e.ethClient, fromAddress)
+			if err != nil {
+				e.Logger.Errorf("get nonce failed: %v", err)
+				return err
+			}
+			e.auth.Nonce.Set(big.NewInt(int64(nonce)))
 
 			contractAddress, _, _, err := bind.DeployContract(e.auth, parsed, common.FromHex(contract.BIN), e.ethClient, e.Args...)
 			if err != nil {
@@ -234,9 +257,6 @@ func (e *ETH) DeployContract() error {
 			}
 
 			contract.contractAddress = append(contract.contractAddress, contractAddress)
-
-			e.nonce++
-			e.auth.Nonce = big.NewInt(int64(e.nonce))
 		}
 		// update contract
 		contracts[name] = contract
@@ -266,7 +286,7 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	// e.round++
 	// e.auth.Nonce = big.NewInt(int64(nonce))
 	from := common.HexToAddress(invoke.Caller)
-	nonce, err := e.ethClient.PendingNonceAt(context.Background(), from)
+	nonce, err := nonceMgr.getNonce(e.ethClient, from)
 	if err != nil {
 		e.Logger.Errorf("invoke: pending nonce failed: %v", err)
 		return e.handleErr()
@@ -353,14 +373,19 @@ func (e *ETH) Confirm(result *fcom.Result, ops ...fcom.Option) *fcom.Result {
 		result.Label == fcom.InvalidLabel {
 		return result
 	}
-	tx, _, err := e.ethClient.TransactionByHash(context.Background(), common.HexToHash(result.UID))
-	result.ConfirmTime = time.Now().UnixNano()
-	if err != nil || tx == nil {
-		e.Logger.Errorf("query failed: %v", err)
-		result.Status = fcom.Unknown
-		return result
+	for i := 1; i <= 10; i++ {
+		tx, _, err := e.ethClient.TransactionByHash(context.Background(), common.HexToHash(result.UID))
+		result.ConfirmTime = time.Now().UnixNano()
+		if err != nil || tx == nil {
+			e.Logger.Warningf("query failed: %v", err)
+			result.Status = fcom.Unknown
+			time.Sleep(200 * time.Millisecond)
+			continue
+		}
+		result.Status = fcom.Confirm
+		break
 	}
-	result.Status = fcom.Confirm
+
 	return result
 }
 
@@ -372,13 +397,15 @@ func (e *ETH) Transfer(args fcom.Transfer, ops ...fcom.Option) (result *fcom.Res
 	// nonce := e.nonce + (e.wkIdx+e.round*e.workerNum)*(e.engineCap/e.workerNum) + e.vmIdx
 	// e.round++
 	from := common.HexToAddress(args.From)
-	nonce, err := e.ethClient.PendingNonceAt(context.Background(), from)
+	nonce, err := nonceMgr.getNonce(e.ethClient, from)
 	if err != nil {
 		e.Logger.Errorf("transfer: pending nonce failed: %v", err)
 		return e.handleErr()
 	}
 
 	value := big.NewInt(args.Amount)
+	// value too small, mul a factor
+	value.Mul(value, big.NewInt(valuefactor))
 
 	toAddress := common.HexToAddress(args.To)
 	data := []byte(args.Extra)
@@ -515,14 +542,21 @@ func (e *ETH) GetRandomAccount(addr string) string {
 	defer lock.RUnlock()
 
 	accountAddr := strings.TrimPrefix(addr, "0x")
-	randomNumber := rand.Int63n(int64(e.accCount))
+	randomNumber := rand.Int63n(int64(accountCount))
 
 	account := accountAddrList[randomNumber]
 	if account == accountAddr {
-		index := (randomNumber + 1) % int64(e.accCount)
+		index := (randomNumber + 1) % int64(accountCount)
 		return accountAddrList[index]
 	}
 	return account
+}
+
+func (e *ETH) GetAccount(index uint64) string {
+	lock.RLock()
+	defer lock.RUnlock()
+
+	return accountAddrList[index]
 }
 
 // GetRandomAccountByGroup get random account by group
@@ -535,7 +569,7 @@ func (e *ETH) GetRandomAccountByGroup() string {
 	// my group
 	group := e.wkIdx*e.engineCap + e.vmIdx
 
-	accountNumOneGroup := e.accCount / totalGroup
+	accountNumOneGroup := accountCount / totalGroup
 
 	randomNumber := rand.Int63n(int64(accountNumOneGroup))
 	accIndex := randomNumber + int64(group*accountNumOneGroup)
@@ -614,7 +648,12 @@ func KeystoreToPrivateKey(privateKeyFile, password string) ([]string, map[string
 	dstAddrList := make([]string, 0)
 	dstKeyMap := make(map[string]*ecdsa.PrivateKey)
 	keys := strings.Split(string(keyjson), sep)
-	for _, key := range keys {
+
+	if accountCount > uint64(len(keys)) {
+		return nil, nil, fmt.Errorf("expected account count %d is bigger than importing account count: %d", accountCount, len(keys))
+	}
+
+	for _, key := range keys[:accountCount] {
 		sk, err := crypto.HexToECDSA(strings.TrimPrefix(key, "0x"))
 		if err != nil {
 			return nil, nil, err
