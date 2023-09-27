@@ -354,8 +354,12 @@ func (e *ETH) convertArgs(args []interface{}) []interface{} {
 			dstArgs = append(dstArgs, big.NewInt(int64(argFloat)))
 		case reflect.TypeOf(""):
 			argStr := arg.(string)
-			if strings.HasPrefix(argStr, "0x") || len(argStr) == common.AddressLength*2 {
+			str := strings.TrimPrefix(argStr, "0x")
+			if len(str) == common.AddressLength*2 {
 				addr := common.HexToAddress(argStr)
+				dstArgs = append(dstArgs, addr)
+			} else if len(str) == common.HashLength*2 {
+				addr := common.Hex2Bytes(str)
 				dstArgs = append(dstArgs, addr)
 			} else {
 				dstArgs = append(dstArgs, arg)
