@@ -6,15 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/meshplus/hyperbench-common/base"
+	"math/big"
+	"math/rand"
 	"os"
 	"path"
 	"reflect"
 	"strings"
 	"sync"
-
-	"math/big"
-	"math/rand"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -23,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/meshplus/hyperbench-common/base"
 	fcom "github.com/meshplus/hyperbench-common/common"
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
@@ -93,7 +92,8 @@ type ETH struct {
 
 // Msg contains message of context
 type Msg struct {
-	Contract *Contract
+	ContractName string `json:"contract_name"`
+	ContractAddr string `json:"contract_addr"`
 }
 
 var (
@@ -238,6 +238,8 @@ func (e *ETH) DeployContract() error {
 			return err
 		}
 		contract.parsedAbi = parsed
+		// update contract
+		contracts[name] = contract
 
 		// deploy contract num is contractNum for every contract
 		for i := 0; i < int(e.contractNum); i++ {
@@ -257,10 +259,10 @@ func (e *ETH) DeployContract() error {
 			}
 
 			contract.contractAddress = append(contract.contractAddress, contractAddress)
+			// update contract
+			contracts[name] = contract
+			e.Logger.Infof("deploy contract: %s success, address: %s", name, contractAddress)
 		}
-		// update contract
-		contracts[name] = contract
-		e.Logger.Infof("deploy contract: %s success, count: %d", name, len(contract.contractAddress))
 	}
 
 	return nil
@@ -474,23 +476,17 @@ func (e *ETH) SetContext(context string) error {
 		return err
 	}
 
-	// set contractaddress,abi,publickey
-	// e.contract = msg.Contract
-	// if e.contract != nil {
-	// 	parsed, err := abi.JSON(strings.NewReader(e.contract.ABI))
-	// 	if err != nil {
-	// 		e.Logger.Errorf("decode abi of contract failed: %v", err)
-	// 		return err
-	// 	}
-	// 	e.contract.parsedAbi = parsed
-	// }
-	// publicKey := e.privateKey.Public()
-	// publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	// if !ok {
-	// 	e.Logger.Error("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
-	// 	return errors.New("cannot assert type: publicKey is not of type *ecdsa.PublicKey")
-	// }
-	// e.publicKey = publicKeyECDSA
+	//set contract address
+	lock.Lock()
+	defer lock.Unlock()
+
+	contract, ok := contracts[msg.ContractName]
+	if !ok {
+		e.Logger.Errorf("not found this contract: %s", msg.ContractName)
+		return fmt.Errorf("not found this contract: %s", msg.ContractName)
+	}
+	contract.contractAddress = []common.Address{common.HexToAddress(msg.ContractAddr)}
+	contracts[msg.ContractName] = contract
 	return nil
 }
 
