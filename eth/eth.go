@@ -359,8 +359,10 @@ func (e *ETH) convertArgs(args []interface{}) []interface{} {
 				addr := common.HexToAddress(argStr)
 				dstArgs = append(dstArgs, addr)
 			} else if len(str) == common.HashLength*2 {
-				addr := common.Hex2Bytes(str)
-				dstArgs = append(dstArgs, addr)
+				addr := common.Hex2BytesFixed(str, 32)
+				data := [32]byte{}
+				copy(data[:], addr)
+				dstArgs = append(dstArgs, data)
 			} else {
 				dstArgs = append(dstArgs, arg)
 			}
