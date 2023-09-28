@@ -383,13 +383,13 @@ func (e *ETH) Confirm(result *fcom.Result, ops ...fcom.Option) *fcom.Result {
 		result.Label == fcom.InvalidLabel {
 		return result
 	}
-	for i := 1; i <= 10; i++ {
+	for i := 1; i <= 5; i++ {
 		tx, err := e.ethClient.TransactionReceipt(context.Background(), common.HexToHash(result.UID))
 		result.ConfirmTime = time.Now().UnixNano()
 		if err != nil || tx == nil {
 			e.Logger.Warningf("query failed: %v", err)
 			result.Status = fcom.Unknown
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
 		result.Status = fcom.Confirm
