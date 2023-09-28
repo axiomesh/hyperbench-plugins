@@ -188,9 +188,7 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		workerNum = 1
 	}
 	contractNum := viper.GetUint64(fcom.ClientContractNum)
-	if contractNum == 0 {
-		contractNum = 1
-	}
+
 	vmIdx := uint64(blockchainBase.Options["vmIdx"].(int64))
 	wkIdx := uint64(blockchainBase.Options["wkIdx"].(int64))
 
