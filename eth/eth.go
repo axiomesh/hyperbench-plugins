@@ -51,7 +51,7 @@ type NonceMgr struct {
 	lock     sync.RWMutex
 }
 
-func (nm *NonceMgr) getNonce(client *ethclient.Client, addr common.Address) (uint64, error) {
+func (nm *NonceMgr) getNonceAndAdd(client *ethclient.Client, addr common.Address) (uint64, error) {
 	nm.lock.Lock()
 	defer nm.lock.Unlock()
 
@@ -69,6 +69,16 @@ func (nm *NonceMgr) getNonce(client *ethclient.Client, addr common.Address) (uin
 	return nonce, nil
 }
 
+func (nm *NonceMgr) subNonce(addr common.Address) {
+	nm.lock.Lock()
+	defer nm.lock.Unlock()
+
+	if nonce, ok := nm.nonceMap[addr.String()]; ok {
+		nonce--
+		nm.nonceMap[addr.String()] = nonce
+	}
+}
+
 // ETH the client of eth
 type ETH struct {
 	*base.BlockchainBase
@@ -81,7 +91,6 @@ type ETH struct {
 	chainID     *big.Int
 	gasPrice    *big.Int
 	round       uint64
-	nonce       uint64
 	engineCap   uint64
 	workerNum   uint64
 	contractNum uint64
@@ -153,12 +162,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		return nil, err
 	}
 
-	nonce, err := nonceMgr.getNonce(ethClient, fromAddress)
-	if err != nil {
-		log.Errorf("pending nonce failed: %v", err)
-		return nil, err
-	}
-
 	gasPrice, err := ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
 		log.Errorf("generate gasprice failed: %v", err)
@@ -174,7 +177,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		log.Errorf("generate transaction options failed: %v", err)
 		return nil, err
 	}
-	auth.Nonce = big.NewInt(int64(nonce))
 	auth.Value = big.NewInt(0)       // in wei
 	auth.GasLimit = uint64(gasLimit) // in units
 	auth.GasPrice = gasPrice
@@ -201,7 +203,6 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		gasPrice:       gasPrice,
 		startBlock:     startBlock.Number.Uint64(),
 		round:          0,
-		nonce:          nonce,
 		engineCap:      viper.GetUint64(fcom.EngineCapPath),
 		workerNum:      workerNum,
 		contractNum:    contractNum,
@@ -243,7 +244,7 @@ func (e *ETH) DeployContract() error {
 		for i := 0; i < int(e.contractNum); i++ {
 			e.auth.GasPrice = nil
 			e.auth.GasLimit = 0
-			nonce, err := nonceMgr.getNonce(e.ethClient, fromAddress)
+			nonce, err := nonceMgr.getNonceAndAdd(e.ethClient, fromAddress)
 			if err != nil {
 				e.Logger.Errorf("get nonce failed: %v", err)
 				return err
@@ -253,6 +254,7 @@ func (e *ETH) DeployContract() error {
 			contractAddress, _, _, err := bind.DeployContract(e.auth, parsed, common.FromHex(contract.BIN), e.ethClient, e.Args...)
 			if err != nil {
 				e.Logger.Errorf("deploycontract failed: %v", err)
+				nonceMgr.subNonce(fromAddress)
 				continue
 			}
 
@@ -285,12 +287,6 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	// nonce := e.nonce + (e.wkIdx+e.round*e.workerNum)*(e.engineCap/e.workerNum) + e.vmIdx + 1
 	// e.round++
 	// e.auth.Nonce = big.NewInt(int64(nonce))
-	from := common.HexToAddress(invoke.Caller)
-	nonce, err := nonceMgr.getNonce(e.ethClient, from)
-	if err != nil {
-		e.Logger.Errorf("invoke: pending nonce failed: %v", err)
-		return e.handleErr()
-	}
 
 	gasPrice, err := e.ethClient.SuggestGasPrice(context.Background())
 	if err != nil {
@@ -302,6 +298,13 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	auth, err := bind.NewKeyedTransactorWithChainID(priKey, e.chainID)
 	if err != nil {
 		e.Logger.Errorf("generate transaction options failed: %v", err)
+		return e.handleErr()
+	}
+
+	from := common.HexToAddress(invoke.Caller)
+	nonce, err := nonceMgr.getNonceAndAdd(e.ethClient, from)
+	if err != nil {
+		e.Logger.Errorf("invoke: pending nonce failed: %v", err)
 		return e.handleErr()
 	}
 	auth.Nonce = big.NewInt(int64(nonce))
@@ -321,6 +324,7 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 	sendTime := time.Now().UnixNano()
 	if err != nil {
 		e.Logger.Errorf("invoke error: %v", err)
+		nonceMgr.subNonce(from)
 		return &fcom.Result{
 			Label:     invoke.Func,
 			UID:       fcom.InvalidUID,
@@ -380,7 +384,7 @@ func (e *ETH) Confirm(result *fcom.Result, ops ...fcom.Option) *fcom.Result {
 		return result
 	}
 	for i := 1; i <= 10; i++ {
-		tx, _, err := e.ethClient.TransactionByHash(context.Background(), common.HexToHash(result.UID))
+		tx, err := e.ethClient.TransactionReceipt(context.Background(), common.HexToHash(result.UID))
 		result.ConfirmTime = time.Now().UnixNano()
 		if err != nil || tx == nil {
 			e.Logger.Warningf("query failed: %v", err)
@@ -403,7 +407,7 @@ func (e *ETH) Transfer(args fcom.Transfer, ops ...fcom.Option) (result *fcom.Res
 	// nonce := e.nonce + (e.wkIdx+e.round*e.workerNum)*(e.engineCap/e.workerNum) + e.vmIdx
 	// e.round++
 	from := common.HexToAddress(args.From)
-	nonce, err := nonceMgr.getNonce(e.ethClient, from)
+	nonce, err := nonceMgr.getNonceAndAdd(e.ethClient, from)
 	if err != nil {
 		e.Logger.Errorf("transfer: pending nonce failed: %v", err)
 		return e.handleErr()
@@ -424,10 +428,12 @@ func (e *ETH) Transfer(args fcom.Transfer, ops ...fcom.Option) (result *fcom.Res
 	account, ok := accounts[args.From]
 	if !ok {
 		e.Logger.Errorf("get account error: from: %s", args.From)
+		nonceMgr.subNonce(from)
 		return e.handleErr()
 	}
 	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(e.chainID), account)
 	if err != nil {
+		nonceMgr.subNonce(from)
 		return &fcom.Result{
 			Label:     fcom.BuiltinTransferLabel,
 			UID:       fcom.InvalidUID,
@@ -441,6 +447,7 @@ func (e *ETH) Transfer(args fcom.Transfer, ops ...fcom.Option) (result *fcom.Res
 	sendTime := time.Now().UnixNano()
 	if err != nil {
 		e.Logger.Errorf("transfer error: %v", err)
+		nonceMgr.subNonce(from)
 		return &fcom.Result{
 			Label:     fcom.BuiltinTransferLabel,
 			UID:       fcom.InvalidUID,
