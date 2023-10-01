@@ -177,6 +177,7 @@ func New(blockchainBase *base.BlockchainBase) (client interface{}, err error) {
 		log.Errorf("generate transaction options failed: %v", err)
 		return nil, err
 	}
+	auth.Nonce = big.NewInt(0)       // init nonce
 	auth.Value = big.NewInt(0)       // in wei
 	auth.GasLimit = uint64(gasLimit) // in units
 	auth.GasPrice = gasPrice
