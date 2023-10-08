@@ -351,11 +351,11 @@ func (e *ETH) Invoke(invoke fcom.Invoke, ops ...fcom.Option) *fcom.Result {
 func (e *ETH) convertArgs(args []interface{}) []interface{} {
 	var dstArgs []interface{}
 	for _, arg := range args {
-		switch reflect.TypeOf(arg) {
-		case reflect.TypeOf(float64(0)):
+		switch reflect.TypeOf(arg).Kind() {
+		case reflect.Float64:
 			argFloat := arg.(float64)
 			dstArgs = append(dstArgs, big.NewInt(int64(argFloat)))
-		case reflect.TypeOf(""):
+		case reflect.String:
 			argStr := arg.(string)
 			str := strings.TrimPrefix(argStr, "0x")
 			if len(str) == common.AddressLength*2 {
@@ -368,6 +368,34 @@ func (e *ETH) convertArgs(args []interface{}) []interface{} {
 				dstArgs = append(dstArgs, data)
 			} else {
 				dstArgs = append(dstArgs, arg)
+			}
+		case reflect.Slice:
+			argSlice := arg.([]interface{})
+			// Create an array of appropriate length.
+			isAddressArray := true
+			for _, item := range argSlice {
+				// Check if the item can be a valid address, and set the flag false if not.
+				if addrStr, ok := item.(string); ok {
+					str := strings.TrimPrefix(addrStr, "0x")
+					if len(str) != common.AddressLength*2 {
+						isAddressArray = false
+						break
+					}
+				} else {
+					isAddressArray = false
+					break
+				}
+			}
+
+			// If all items can be valid addresses, create an address array.
+			if isAddressArray {
+				addrArray := make([]common.Address, len(argSlice))
+				for i, item := range argSlice {
+					addrArray[i] = common.HexToAddress(item.(string))
+				}
+				dstArgs = append(dstArgs, addrArray)
+			} else {
+				dstArgs = append(dstArgs, arg) // or handle non-address slices as needed
 			}
 		default:
 			dstArgs = append(dstArgs, arg)
